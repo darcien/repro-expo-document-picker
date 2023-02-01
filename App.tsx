@@ -1,47 +1,87 @@
 import * as DocumentPicker from "expo-document-picker";
+import * as FileSystem from "expo-file-system";
 import { useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 
-function formatResult(result: DocumentPicker.DocumentResult): string {
+function formatJson(value: any): string {
+  return JSON.stringify(value, null, 2);
+}
+
+function formatPickResult(result: DocumentPicker.DocumentResult): string {
   switch (result.type) {
     case "cancel": {
       return "canceled";
     }
     case "success": {
-      return JSON.stringify(
-        {
-          name: result.name,
-          size: result.size,
-          mimeType: result.mimeType,
-          type: result.type,
-          first100Uri: result.uri.slice(0, 100),
-          hasFile: result.file != null,
-        },
-        null,
-        2
-      );
+      return formatJson({
+        name: result.name,
+        size: result.size,
+        mimeType: result.mimeType,
+        type: result.type,
+        first100Uri: result.uri.slice(0, 100),
+        hasFile: result.file != null,
+      });
     }
   }
 }
 
+const UPLOAD_URL = "http://localhost:9090/file";
+
 export default function App() {
-  const [lastResult, setLastResult] =
+  const [pickResult, setPickResult] =
     useState<DocumentPicker.DocumentResult | null>(null);
+  const [uploadResult, setUploadResult] = useState(null);
 
   return (
     <View style={styles.container}>
-      <Text>Last result:</Text>
+      <Text>Pick result:</Text>
       <Text>
-        {lastResult ? formatResult(lastResult) : "no document picked yet"}
+        {pickResult ? formatPickResult(pickResult) : "no document picked yet"}
       </Text>
       <Pressable
         onPress={async () => {
           const result = await DocumentPicker.getDocumentAsync();
-          setLastResult(result);
+          setPickResult(result);
         }}
-        style={styles.selectButton}
+        style={styles.button}
       >
         <Text>Press me to select document</Text>
+      </Pressable>
+
+      <Text style={{ marginTop: 24 }}>Upload result:</Text>
+      <Text>{uploadResult ? formatJson(uploadResult) : "no upload yet"}</Text>
+      <Pressable
+        onPress={async () => {
+          if (pickResult.type === "cancel") {
+            return;
+          }
+          try {
+            if (Platform.OS === "web") {
+              const result = await fetch(UPLOAD_URL, {
+                method: "POST",
+                body: pickResult.file,
+              });
+              const jsonResult = await result.json();
+              setUploadResult(jsonResult);
+            } else {
+              const result = await FileSystem.uploadAsync(
+                UPLOAD_URL,
+                pickResult.uri,
+                {
+                  httpMethod: "POST",
+                  uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+                }
+              );
+
+              setUploadResult(result.body);
+            }
+          } catch (error) {
+            console.log("Error uploading", { error });
+          }
+        }}
+        style={styles.button}
+      >
+        <Text>Press me to upload selected document</Text>
       </Pressable>
     </View>
   );
@@ -54,7 +94,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  selectButton: {
+  button: {
     marginTop: 24,
     backgroundColor: "salmon",
     padding: 8,
